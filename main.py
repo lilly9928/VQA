@@ -76,7 +76,7 @@ def main():
     #loss 함수
     criterion = nn.CrossEntropyLoss()
 
-    #?
+
     params = list(model.img_encoder.model.model.fc.parameters()) \
         + list(model.qst_encoder.parameters()) \
         + list(model.fc1.parameters()) \

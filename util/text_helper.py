@@ -15,7 +15,7 @@ def kortokenize(sentence):
     return tokens
 
 def load_str_list(fname):
-    with open(fname) as f:
+    with open(fname, encoding='UTF8') as f:
         lines = f.readlines()
     lines = [l.strip() for l in lines]
     return lines
