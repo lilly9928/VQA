@@ -14,6 +14,7 @@ def resize_images(input_dir, output_dir, size):
         if not idir.is_dir():
             continue
         if not os.path.exists(output_dir + '/' + idir.name):
+            print(idir.name)
             os.makedirs(output_dir + '/' + idir.name)
         images = os.listdir(idir.path)
         n_images = len(images)
@@ -31,8 +32,8 @@ def resize_images(input_dir, output_dir, size):
 
 
 def main(args):
-    input_dir = 'D:/data/vqa/coco/simple_vqa/Images'
-    output_dir = 'D:/data/vqa/coco/simple_vqa/Resized_Images'
+    input_dir = 'C:/Users/andlabkbs/Desktop/dataset/Visual_Question_Answering/val/'
+    output_dir = 'C:/Users/andlabkbs/Desktop/dataset/Visual_Question_Answering/Resized_val'
     image_size = [244, 244]
     resize_images(input_dir, output_dir, image_size)
 

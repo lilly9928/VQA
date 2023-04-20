@@ -118,4 +118,4 @@ if __name__ == "__main__":
         batch_size=batch_size,
         num_workers=num_workers)
 
-    print(data['train'])
+    print(data['train'].dataset.vqa)
