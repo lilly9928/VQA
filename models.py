@@ -64,7 +64,7 @@ class DeformableConv2d(nn.Module):
 class Modify_Resnet(nn.Module):
     def __init__(self,embed_size):
         super(Modify_Resnet,self).__init__()
-        self.model = models.resnet34(pretrained=True)
+        self.model = models.resnet34(weights=True)
         self.model.layer4.deform1= DeformableConv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False)
         self.model.layer4.deform2= DeformableConv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False)
         self.model.layer4.deform3 = DeformableConv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False)

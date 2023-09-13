@@ -31,25 +31,22 @@ def resize_images(input_dir, output_dir, size):
                       .format(iimage + 1, n_images, output_dir + '/' + idir.name))
 
 
-def main(args):
-    input_dir = 'C:/Users/andlabkbs/Desktop/dataset/Visual_Question_Answering/val/'
-    output_dir = 'C:/Users/andlabkbs/Desktop/dataset/Visual_Question_Answering/Resized_val'
+def main():
+    input_dir_train = 'D:/data/vqa/vizwiz/visual_question_answering/Images/train'
+    output_dir_train = 'D:/data/vqa/vizwiz/visual_question_answering/Resize_img'
+    input_dir_val = 'D:/data/vqa/vizwiz/visual_question_answering/Images/val'
+    output_dir_val = 'D:/data/vqa/vizwiz/visual_question_answering/Resize_img'
+    input_dir_test = 'D:/data/vqa/vizwiz/visual_question_answering/Images/test'
+    output_dir_test = 'D:/data/vqa/vizwiz/visual_question_answering/Resize_img'
+
     image_size = [244, 244]
-    resize_images(input_dir, output_dir, image_size)
+    resize_images(input_dir_train, output_dir_train, image_size)
+    resize_images(input_dir_val, output_dir_val, image_size)
+    resize_images(input_dir_test, output_dir_test, image_size)
+
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
 
-    parser.add_argument('--input_dir', type=str, default='/run/datasets/VQA/Images',
-                        help='directory for input images (unresized images)')
 
-    parser.add_argument('--output_dir', type=str, default='/run/datasets/VQA/Resized_Images',
-                        help='directory for output images (resized images)')
-
-    parser.add_argument('--image_size', type=int, default=224,
-                        help='size of images after resizing')
-
-    args = parser.parse_args()
-
-    main(args)
+    main()

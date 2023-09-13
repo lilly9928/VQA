@@ -13,7 +13,7 @@ def make_vocab_questions(input_dir):
     vocab_set = set()
     SENTENCE_SPLIT_REGEX = re.compile(r'(\W+)')
     question_length = []
-    datasets = os.listdir(input_dir)
+    datasets = os.listdir(input_dir+'/Annotations')
     for dataset in datasets:
         with open(input_dir + '/' + dataset, encoding='UTF8') as f:
             questions = json.load(f)
@@ -30,7 +30,7 @@ def make_vocab_questions(input_dir):
     vocab_list.insert(0, '<pad>')
     vocab_list.insert(1, '<unk>')
 
-    with open('C:/Users/andlabkbs/Desktop/dataset/Visual_Question_Answering/vocab_questions.txt', 'w') as f:
+    with open(input_dir+'/vocab_questions.txt', 'w') as f:
         f.writelines([w + '\n' for w in vocab_list])
 
     print('Make vocabulary for questions')
@@ -65,7 +65,7 @@ def make_vocab_answers(input_dir):
     vocab_list.insert(0, '<pad>')
     vocab_list.insert(1, '<unk>')
 
-    with open('C:/Users/andlabkbs/Desktop/dataset/Visual_Question_Answering/Annotations/vocab_answers.txt', 'w', encoding='UTF8') as f:
+    with open(input_dir+'/vocab_answers.txt', 'w', encoding='UTF8') as f:
         f.writelines([w + '\n' for w in vocab_list])
     #
     # print('Make vocabulary for questions')
@@ -245,18 +245,11 @@ def make_caption(input_dir):
 
 
 
-def main(args):
-    input_dir = 'C:/Users/andlabkbs/Desktop/dataset/Visual_Question_Answering/'
-    # make_vocab_questions(input_dir + '/Annotations')
-    make_vocab_answers(input_dir + '/Annotations/foranswer/')
-   # make_vocab_caption(input_dir + '/Annotations/annotations')
-   #  make_caption(input_dir + '/Annotations/annotations')
+def main():
+    input_dir = 'D:/data/vqa/vizwiz/visual_question_answering'
+    make_vocab_questions(input_dir)
+    #make_vocab_answers(input_dir + '/Annotations/foranswer/')
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--input_dir', type=str, default='/run/media/hoosiki/WareHouse3/mtb/datasets/VQA',
-                        help='directory for input questions and answers')
-    parser.add_argument('--n_answers', type=int, default=1000,
-                        help='the number of answers to be kept in vocab')
-    args = parser.parse_args()
-    main(args)
+
+    main()

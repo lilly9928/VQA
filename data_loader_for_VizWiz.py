@@ -7,7 +7,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 from matplotlib import pyplot as plt
 
-from util import text_helper
+from util_for_VizWiz import text_helper
 
 
 class VqaDataset(data.Dataset):
@@ -16,15 +16,13 @@ class VqaDataset(data.Dataset):
         self.input_dir = input_dir
         self.qst_vocab = text_helper.VocabDict(input_dir + '/vocab_questions.txt')
         self.ans_vocab = text_helper.VocabDict(input_dir + '/vocab_answers.txt')
-        with open(input_dir + input_vqa, encoding='UTF8') as f:
-            self.vqa = json.load(f)
         # self.vqa_length = len(self.vqa)
 
-        # self.vqa = np.load(input_dir+'/'+input_vqa,allow_pickle = True)
-        # self.max_qst_length = max_qst_length
-        # self.max_num_ans = max_num_ans
-        # self.load_ans = ('valid_answers' in self.vqa[0]) and (self.vqa[0]['valid_answers'] is not None)
-        # self.transform = transform
+        self.vqa = np.load(input_dir+input_vqa,allow_pickle = True)
+        self.max_qst_length = max_qst_length
+        self.max_num_ans = max_num_ans
+        self.load_ans = ('valid_answers' in self.vqa[0]) and (self.vqa[0]['valid_answers'] is not None)
+        self.transform = transform
 
     def __getitem__(self, idx):
 
@@ -63,11 +61,11 @@ class VqaDataset(data.Dataset):
 
 def get_loader(input_dir, input_vqa_train, input_vqa_valid, max_qst_length, max_num_ans, batch_size, num_workers):
 
-    # transform = {
-    #     phase: transforms.Compose([transforms.ToTensor(),
-    #                                transforms.Normalize((0.485, 0.456, 0.406),
-    #                                                     (0.229, 0.224, 0.225))])
-    #     for phase in ['train', 'valid',]}
+    transform = {
+        phase: transforms.Compose([transforms.ToTensor(),
+                                   transforms.Normalize((0.485, 0.456, 0.406),
+                                                        (0.229, 0.224, 0.225))])
+        for phase in ['train', 'valid',]}
 
     vqa_dataset = {
         'train': VqaDataset(
@@ -75,12 +73,14 @@ def get_loader(input_dir, input_vqa_train, input_vqa_valid, max_qst_length, max_
             input_vqa=input_vqa_train,
             max_qst_length=max_qst_length,
             max_num_ans=max_num_ans,
+            transform=transform['train']
             ),
         'valid': VqaDataset(
             input_dir=input_dir,
             input_vqa=input_vqa_valid,
             max_qst_length=max_qst_length,
             max_num_ans=max_num_ans,
+            transform=transform['train']
             ),
 
     }
@@ -97,10 +97,10 @@ def get_loader(input_dir, input_vqa_train, input_vqa_valid, max_qst_length, max_
 
 if __name__ == "__main__":
 
-    input_dir = 'C:/Users/andlabkbs/Desktop/dataset/Visual_Question_Answering/'
+    input_dir = 'D:/data/vqa/vizwiz/visual_question_answering/'
     log_dir = './logs'
     model_dir='./models'
-    max_qst_length = 30
+    max_qst_length = 51
     max_num_ans =10
     embed_size=64
     word_embed_size=300
@@ -116,8 +116,8 @@ if __name__ == "__main__":
 
     data = get_loader(
         input_dir=input_dir,
-        input_vqa_train='Annotations/foranswer/train.json',
-        input_vqa_valid='Annotations/foranswer/val.json',
+        input_vqa_train='train.npy',
+        input_vqa_valid='valid.npy',
         max_qst_length=max_qst_length,
         max_num_ans=max_num_ans,
         batch_size=batch_size,

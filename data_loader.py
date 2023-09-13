@@ -4,7 +4,7 @@ import torch
 import torch.utils.data as data
 import torchvision.transforms as transforms
 from PIL import Image
-from util import text_helper
+from util_for_VizWiz import text_helper
 
 
 class VqaDataset(data.Dataset):

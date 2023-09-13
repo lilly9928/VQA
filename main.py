@@ -6,11 +6,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim import lr_scheduler
-from data_loader import get_loader
+#from data_loader import get_loader
 #from data_loacer_for_only_caption import get_loader
+from data_loader_for_VizWiz import get_loader
 from models import VqaModel
+#from transformer_model import TransformerVqaModel
 #from util import text_helper
-from util import visualization
+from util_for_VizWiz import visualization
 import datetime
 import torchvision.models as models
 from torch.optim.lr_scheduler import ReduceLROnPlateau
@@ -24,11 +26,10 @@ def main():
     d = datetime.datetime.now()
     #input hyperparameter
 
-    input_dir = 'D:/data/vqa/coco/simple_vqa'
+    input_dir = 'D:/data/vqa/vizwiz/visual_question_answering/'
     log_dir = './logs'
     model_dir='./models'
-    max_qst_length = 30
-    max_cap_length=50
+    max_qst_length = 500
     max_num_ans =10
     embed_size=64
     word_embed_size=300
@@ -52,7 +53,6 @@ def main():
         input_vqa_train='train.npy',
         input_vqa_valid='valid.npy',
         max_qst_length=max_qst_length,
-        #max_cap_length=max_cap_length,
         max_num_ans=max_num_ans,
         batch_size=batch_size,
         num_workers=num_workers)
@@ -68,10 +68,20 @@ def main():
         embed_size=embed_size,
         qst_vocab_size=qst_vocab_size,
         ans_vocab_size=ans_vocab_size,
-       # cap_vocab_size=cap_vocab_size,
         word_embed_size=word_embed_size,
         num_layers=num_layers,
         hidden_size=hidden_size).to(device)
+
+
+    # model = TransformerVqaModel(
+    #     embed_size=embed_size,
+    #     qst_vocab_size=qst_vocab_size,
+    #     ans_vocab_size=ans_vocab_size,
+    #     word_embed_size=word_embed_size,
+    #     num_layers=num_layers,
+    #     hidden_size=hidden_size,
+    #     in_channel=3,
+    #     patch_size=16).to(device)
 
     #loss 함수
     criterion = nn.CrossEntropyLoss()
@@ -107,29 +117,24 @@ def main():
             for batch_idx, batch_sample in enumerate(data_loader[phase]):
 
                 #batch_sample에서 image, question,label에 가져와서 값 정의
-                image = batch_sample['image'].to(device).float()
+                image = batch_sample['image'].to(device)
                 question = batch_sample['question'].to(device).long()
-                #caption = batch_sample['caption'].to(device)
                 label = batch_sample['answer_label'].to(device).long()
                 multi_choice = batch_sample['answer_multi_choice']  # not tensor, list.
-               # qstcaps = batch_sample['qstcap'].to(device).long()
 
                 optimizer.zero_grad()
 
-                #torch.set_grad_enabled 찾아보기
                 # train일 경우
                 with torch.set_grad_enabled(phase == 'train'):
                     #모델에 이미지, 질문 넣어주고 output 추출
                     #pred 1, pred 2 추출
-                    output = model(image, question)      # [batch_size, ans_vocab_size=100
+                    output = model(image,question)      # [batch_size, ans_vocab_size=100
                    # print('output',ans_vocab.idx2word(output[0]))
                     _, pred_exp1 = torch.max(output, 1)  # [batch_size]
                     _, pred_exp2 = torch.max(output, 1)  # [batch_size]
 
                     loss = criterion(output, label)
 
-                    #train일 경우 역전파 실행
-                    #역전파 코드 공부하기
                     if phase == 'train':
                         loss.backward()
                         optimizer.step()
@@ -155,21 +160,21 @@ def main():
                   .format(phase.upper(), epoch+1, num_epochs, epoch_loss, epoch_acc_exp1, epoch_acc_exp2))
 
             #visualization.print_examples(model, 'D:/data/vqa/coco/simple_vqa/test.npy', data_loader['train'].dataset)
-
-            for _ in range(5):
-                image_path,question,res =visualization.print_examples(model, 'D:/data/vqa/coco/simple_vqa/test.npy',
-                                             data_loader['train'].dataset)
-                # Log the visualization
-                with open(os.path.join(log_dir,'20221031_deformablecnn.txt') , 'a') as f:
-                    f.write('epoch'+str(epoch+1)+'\t'+str(image_path)+'\t'+str(question)+'\t'+str(res)+'\n')
-
-            for _ in range(5):
-                image_path, question, res = visualization.print_examples(model, 'D:/data/vqa/coco/simple_vqa/valid.npy',
-                                                                         data_loader['valid'].dataset)
-                # Log the visualization
-                with open(os.path.join(log_dir, '20221031_deformablecnn.txt'), 'a') as f:
-                    f.write('valid, epoch' + str(epoch + 1) + '\t' + str(image_path) + '\t' + str(question) + '\t' + str(
-                        res) + '\n')
+            #
+            # for _ in range(5):
+            #     image_path,question,res =visualization.print_examples(model, 'D:/data/vqa/vizwiz/visual_question_answering/test.npy',
+            #                                  data_loader['train'].dataset)
+            #     # Log the visualization
+            #     with open(os.path.join(log_dir,'20221031_deformablecnn.txt') , 'a') as f:
+            #         f.write('epoch'+str(epoch+1)+'\t'+str(image_path)+'\t'+str(question)+'\t'+str(res)+'\n')
+            #
+            # for _ in range(5):
+            #     image_path, question, res = visualization.print_examples(model, 'D:/data/vqa/vizwiz/visual_question_answering/valid.npy',
+            #                                                              data_loader['valid'].dataset)
+            #     # Log the visualization
+            #     with open(os.path.join(log_dir, '20221031_deformablecnn.txt'), 'a') as f:
+            #         f.write('valid, epoch' + str(epoch + 1) + '\t' + str(image_path) + '\t' + str(question) + '\t' + str(
+            #             res) + '\n')
 
             # Log the loss and accuracy in an epoch.
             with open(os.path.join(log_dir, '{}-log-epoch-{:02}.txt')
@@ -187,7 +192,7 @@ def main():
 def image_test(data_loader,model,log_dir,log_name):
 
     for _ in range(5):
-        image_path, question, res = visualization.print_korean_examples(model, 'D:/data/vqa/coco/simple_vqa/test.npy',
+        image_path, question, res = visualization.print_korean_examples(model, 'D:/data/vqa/vizwiz/visual_question_answering/test.npy',
                                                                  data_loader['train'].dataset)
         # Log the visualization
         with open(os.path.join(log_dir, log_name+'.txt'), 'a') as f:

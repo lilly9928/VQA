@@ -1,13 +1,24 @@
 import os
 import time
+import re
+import math
 import torch
+import numpy as np
+import pandas as pd
 from torch import nn, Tensor
+import torch.nn
 import torchvision.models as models
 import datetime
 import torchvision
 import math
+from einops import rearrange,reduce,repeat
+from einops.layers.torch import Rearrange,Reduce
+import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader, Dataset
 
-from data_loader import get_loader
+from torchsummary import summary
+
+
 
 class DeformableConv2d(nn.Module):
     def __init__(self,
@@ -64,203 +75,95 @@ class DeformableConv2d(nn.Module):
                                           )
         return x
 
-class Modify_Resnet(nn.Module):
-    def __init__(self,embed_size):
-        super(Modify_Resnet,self).__init__()
-        self.model = models.resnet34(pretrained=True)
-        self.model.layer4.deform1= DeformableConv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False)
-        self.model.layer4.deform2= DeformableConv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False)
-        self.model.layer4.deform3 = DeformableConv2d(512, 512, kernel_size=3, stride=1, padding=1, bias=False)
-        self.model.fc = nn.Linear(512, embed_size)
+class ImgEncoder(nn.Module):
+    def __init__(self, in_channel:int =3, patch_size: int = 16, emb_size:int = 768, img_size:int = 224):
+        self.patch_size = patch_size
+        super().__init__()
+        self.projection = nn.Sequential(
+            nn.Conv2d(in_channel,emb_size,kernel_size=patch_size,stride=patch_size),
+            Rearrange('b e (h) (w) -> b (h w) e')
+        )
 
+        self.cls_token = nn.Parameter(torch.randn(1, 1, emb_size))
+        self.positions = nn.Parameter(torch.randn((img_size // patch_size) ** 2 + 1, emb_size))
 
-    def forward(self,x):
-        x = self.model(x)
+    def forward(self, x: Tensor) -> Tensor:
+        b, _, _, _ = x.shape
+        x = self.projection(x)
+        cls_tokens = repeat(self.cls_token, '() n e -> b n e', b=b)
+        # prepend the cls token to the input
+        x = torch.cat([cls_tokens, x], dim=1)
+        # add position embedding
+        x += self.positions
 
         return x
-class ImgEncoder(nn.Module):
-
-    def __init__(self, embed_size):
-        """(1) Load the pretrained model as you want.
-               cf) one needs to check structure of model using 'print(model)'
-                   to remove last fc layer from the model.
-           (2) Replace final fc layer (score values from the ImageNet)
-               with new fc layer (image feature).
-           (3) Normalize feature vector.
-        """
-        super(ImgEncoder, self).__init__()
-        self.model = Modify_Resnet(embed_size)
-
-    def forward(self, image):
-        """Extract feature vector from image vector.
-        """
-        with torch.no_grad():
-            img_feature = self.model(image)                  # [batch_size, vgg16(19)_fc=4096]
-     #   img_feature = self.fc(img_feature)                   # [batch_size, embed_size]
-
-        l2_norm = img_feature.norm(p=2, dim=1, keepdim=True).detach()
-        img_feature = img_feature.div(l2_norm)               # l2-normalized feature vector
-
-        return img_feature
-
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self,d_model,dropout = 0.1,max_len = 5000):
-        super(PositionalEncoding,self).__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        pe = torch.zeros(max_len,d_model)
-        position = torch.arange(0,max_len).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0,d_model,2)*-(math.log(10000.0)/d_model))
-        pe[:,0::2] = torch.sin(position*div_term)
-        pe[:,1::2] = torch.cos(position*div_term)
-        pe = pe.unsqueeze(0)
-        self.register_buffer('pe',pe)
-
-    def forward(self,x):
-        x= x+self.pe[:,:x.size(1)]
-        return self.dropout(x)
-
-
-class TransformerModel(nn.Module):
-
-    def __init__(self, ntoken: int, d_model: int, nhead: int, d_hid: int,
-                 nlayers: int, dropout: float = 0.5):
+    def __init__(self,dim_model,dropput_p,max_len):
         super().__init__()
-        self.model_type = 'Transformer'
-        self.pos_encoder = PositionalEncoding(d_model, dropout)
-        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, d_hid, dropout)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, nlayers)
-        self.encoder = nn.Embedding(ntoken, d_model)
-        self.d_model = d_model
-        self.decoder = nn.Linear(d_model, ntoken)
+        self.dropout = nn.Dropout(dropput_p)
+        pos_encoding = torch.zeros(max_len,dim_model)
+        position_list = torch.arange(0,max_len,dtype=torch.float).view(-1,1)
+        division_term = torch.exp(torch.arange(0,dim_model,2).float()*(-math.log(10000.0)/dim_model))
+        pos_encoding[:,0::2] = torch.sin(position_list * division_term)
+        pos_encoding[:,1::2] = torch.cos(position_list * division_term)
+        pos_encoding = pos_encoding.unsqueeze(0).transpose(0,1)
+        self.register_buffer("pos_encoding",pos_encoding)
 
-        self.init_weights()
+    def forward(self,token_embedding:torch.tensor)->torch.tensor:
+        return self.dropout(token_embedding + self.pos_encoding[:token_embedding.size(0),:])
 
-    def init_weights(self) -> None:
-        initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.zero_()
-        self.decoder.weight.data.uniform_(-initrange, initrange)
+class QstEncoder(nn.Module):
 
-    def forward(self, src: Tensor, src_mask: Tensor) -> Tensor:
-        """
-        Args:
-            src: Tensor, shape [seq_len, batch_size]
-            src_mask: Tensor, shape [seq_len, seq_len]
+    def __init__(self,num_tokens,dim_model,num_head,num_encoder_layers,dropout_p):
+        super().__init__() #왜해주는지 알아보기
+        self.dim_model = dim_model
+        self.positional_encoder = PositionalEncoding(dim_model=dim_model, dropput_p=dropout_p, max_len=5000)
+        self.embedding = nn.Embedding(num_tokens, dim_model)
+    def forward(self,qst):
+        x = self.embedding(qst)*math.sqrt(self.dim_model)
+        x = self.positional_encoder(x)
+        x = x.permute(1,0,2)
 
-        Returns:
-            output Tensor of shape [seq_len, batch_size, ntoken]
-        """
-        src = self.encoder(src) * math.sqrt(self.d_model)
-        src = self.pos_encoder(src)
-        output = self.transformer_encoder(src, src_mask)
-        output = self.decoder(output)
-        return output
+        return x
 
 
-def generate_square_subsequent_mask(sz: int) -> Tensor:
-    """Generates an upper-triangular matrix of -inf, with zeros on diag."""
-    return torch.triu(torch.ones(sz, sz) * float('-inf'), diagonal=1)
+class VQAModel(nn.Module):
 
-# class QstEncoder(nn.Module):
-#
-#     def __init__(self, qst_vocab_size, word_embed_size, embed_size, num_layers, hidden_size):
-#
-#         super(QstEncoder, self).__init__()
-#         self.word2vec = nn.Embedding(qst_vocab_size, word_embed_size)
-#         self.tanh = nn.Tanh()
-#         self.lstm = nn.LSTM(word_embed_size, hidden_size, num_layers)
-#         self.transformer = TransformerModel(nhead=16, nlayers=12)
-#         self.fc = nn.Linear(2*num_layers*hidden_size, embed_size)     # 2 for hidden and cell states
-#
-#     def forward(self, question):
-#
-#         qst_vec = self.word2vec(question)                             # [batch_size, max_qst_length=30, word_embed_size=300]
-#         qst_vec = self.tanh(qst_vec)
-#         qst_vec = qst_vec.transpose(0, 1)                             # [max_qst_length=30, batch_size, word_embed_size=300]
-#
-#         _, (hidden, cell) = self.lstm(qst_vec)                        # [num_layers=2, batch_size, hidden_size=512]
-#         qst_feature = torch.cat((hidden, cell), 2)                    # [num_layers=2, batch_size, 2*hidden_size=1024]
-#         qst_feature = qst_feature.transpose(0, 1)                     # [batch_size, num_layers=2, 2*hidden_size=1024]
-#         qst_feature = qst_feature.reshape(qst_feature.size()[0], -1)  # [batch_size, 2*num_layers*hidden_size=2048]
-#         qst_feature = self.tanh(qst_feature)
-#         qst_feature = self.fc(qst_feature)                            # [batch_size, embed_size]
-#
-#         return qst_feature
+    def __init__(self,in_channel:int =3, patch_size: int = 16, emb_size:int = 768, img_size:int = 224,
+                 num_tokens:int =4,dim_model:int =8,num_heads:int =2,num_encoder_layers:int =3,dropout_p=0.1):
+        super(VQAModel,self).__init__()
+        self.img_encoder = ImgEncoder(in_channel,patch_size,emb_size,img_size)
+        self.qst_encoder = QstEncoder(num_tokens,dim_model,num_heads,num_encoder_layers,dropout_p)
+    def forward(self,img,qst):
+        img_feature = self.img_encoder(img)
+        qst_feature = self.qst_encoder(qst)
 
+        return img_feature,qst_feature
 
-class TQstEncoder(nn.Module):
-
-    def __init__(self,qst_vocab_size,word_embed_size,embed_size,num_layers,hidden_size):
-        super(TQstEncoder,self).__init__()
-        self.word2vec = nn.Embedding(qst_vocab_size, word_embed_size)
-
-    def forward(self,question):
-        qst_vec = self.word2vec(question)  # [batch_size, max_qst_length=30, word_embed_size=300]
-        qst_vec = self.tanh(qst_vec)
-        qst_vec = qst_vec.transpose(0, 1)                             # [max_qst_length=30, batch_size, word_embed_size=300]
-
-        return qst_vec
-
-
-
-class VqaModel(nn.Module):
-
-    def __init__(self, embed_size, qst_vocab_size, ans_vocab_size, word_embed_size, num_layers, hidden_size):
-
-        super(VqaModel, self).__init__()
-        self.img_encoder = ImgEncoder(embed_size)
-        self.qst_encoder = TQstEncoder(qst_vocab_size, word_embed_size, embed_size, num_layers, hidden_size)
-        self.tanh = nn.Tanh()
-        self.dropout = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(embed_size, ans_vocab_size)
-        self.fc2 = nn.Linear(ans_vocab_size, ans_vocab_size)
-
-    def forward(self, img, qst):
-
-        img_feature = self.img_encoder(img)                     # [batch_size, embed_size]
-        qst_feature = self.qst_encoder(qst)                     # [batch_size, embed_size]
-        combined_feature = torch.mul(img_feature, qst_feature)  # [batch_size, embed_size]
-        combined_feature = self.tanh(combined_feature)
-        combined_feature = self.dropout(combined_feature)
-        combined_feature = self.fc1(combined_feature)           # [batch_size, ans_vocab_size=1000]
-        combined_feature = self.tanh(combined_feature)
-        combined_feature = self.dropout(combined_feature)
-        combined_feature = self.fc2(combined_feature)           # [batch_size, ans_vocab_size=1000]
-
-        return combined_feature
-
-    def visualization_vqa(self,img,qst,vocab):
-
-        result_answer = []
-
-        img_feature = self.img_encoder(img.unsqueeze(0)) # [batch_size, embed_size]
-        qst_feature = self.qst_encoder(qst.unsqueeze(0))  # [batch_size, embed_size]
-        combined_feature = torch.mul(img_feature, qst_feature)  # [batch_size, embed_size]
-        combined_feature = self.tanh(combined_feature)
-        combined_feature = self.dropout(combined_feature)
-        combined_feature = self.fc1(combined_feature)  # [batch_size, ans_vocab_size=1000]
-        combined_feature = self.tanh(combined_feature)
-        combined_feature = self.dropout(combined_feature)
-        combined_feature = self.fc2(combined_feature)  # [batch_size, ans_vocab_size=1000]
-
-        predicted = combined_feature.argmax(1)
-
-        result_answer.append(predicted.item())
-
-        return [vocab.idx2word(idx) for idx in result_answer]
 
 
 if __name__ == '__main__':
-    data_loader = get_loader(
-        input_dir='D:/data/vqa/coco/simple_vqa',
-        input_vqa_train='train.npy',
-        input_vqa_valid='valid.npy',
-        max_qst_length=30,
-        #max_cap_length=max_cap_length,
-        max_num_ans=10,
-        batch_size=16,
-        num_workers=4)
 
+    input_dir = 'D:/data/vqa/coco/simple_vqa'
+    log_dir = './logs'
+    model_dir='./models'
+    max_qst_length = 30
+    max_cap_length=50
+    max_num_ans =10
+    embed_size=64
+    word_embed_size=300
+    num_layers=2
+    hidden_size=32
+    learning_rate = 0.001
+    step_size = 10
+    gamma = 0.1
+    num_epochs=30
+    batch_size = 16
+    num_workers = 4
+    save_step=1
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = VQAModel().to(device)
+    summary(model, [(3, 224, 224),(16,30)], device="cuda")
